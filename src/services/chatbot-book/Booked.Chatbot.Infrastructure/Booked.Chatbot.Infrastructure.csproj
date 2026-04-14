@@ -1,0 +1,15 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\Booked.Chatbot.Application\Booked.Chatbot.Application.csproj" />
+    <ProjectReference Include="..\Booked.Chatbot.Domain\Booked.Chatbot.Domain.csproj" />
+    <ProjectReference Include="..\..\..\shared\Booked.Shared.BuildingBlocks\Booked.Shared.BuildingBlocks.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+</Project>

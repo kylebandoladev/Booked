@@ -1,0 +1,15 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\Booked.Identity.Application\Booked.Identity.Application.csproj" />
+    <ProjectReference Include="..\Booked.Identity.Domain\Booked.Identity.Domain.csproj" />
+    <ProjectReference Include="..\..\..\shared\Booked.Shared.BuildingBlocks\Booked.Shared.BuildingBlocks.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+</Project>

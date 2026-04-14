@@ -1,0 +1,6 @@
+@Booked.Chatbot.Api_HostAddress = http://localhost:5072
+
+GET {{Booked.Chatbot.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
