@@ -1,6 +1,7 @@
 using Booked.Identity.Api.Models;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 using System.Collections.Concurrent;
 
 namespace Booked.Identity.Api.Controllers;
@@ -29,7 +30,14 @@ public class AuthController : ControllerBase
     private static readonly PasswordHasher<StoredCustomer> CustomerPasswordHasher = new();
     private static readonly PasswordHasher<StoredOrganization> OrganizationPasswordHasher = new();
 
-    private const string AdminPassword = "admin123";
+    private readonly string _adminPassword;
+
+    public AuthController(IOptions<AuthSettings> authOptions)
+    {
+        _adminPassword = string.IsNullOrWhiteSpace(authOptions.Value.AdminPassword)
+            ? "admin123"
+            : authOptions.Value.AdminPassword;
+    }
 
     [HttpGet("health")]
     public ActionResult<object> Health()
@@ -198,7 +206,7 @@ public class AuthController : ControllerBase
     [HttpPost("admin/login")]
     public ActionResult<AuthResponse> AdminLogin([FromBody] AdminLoginRequest req)
     {
-        if (req.Password != AdminPassword)
+        if (req.Password != _adminPassword)
         {
             return Unauthorized(new AuthResponse { Success = false, Message = "Invalid admin credentials" });
         }
