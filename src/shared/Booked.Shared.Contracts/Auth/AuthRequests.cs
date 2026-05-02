@@ -1,6 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 
-namespace Booked.Identity.Api.Models;
+namespace Booked.Shared.Contracts.Auth;
 
 public class CustomerRegisterRequest
 {

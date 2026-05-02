@@ -1,4 +1,4 @@
-using Booked.Identity.Api.Models;
+using Booked.Shared.Contracts.Auth;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
