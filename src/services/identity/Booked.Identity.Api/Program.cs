@@ -3,6 +3,10 @@ var builder = WebApplication.CreateBuilder(args);
 // Add services to the container.
 
 builder.Services.Configure<AuthSettings>(builder.Configuration.GetSection("Auth"));
+builder.Services.Configure<Booked.Shared.Contracts.Security.JwtSettings>(builder.Configuration.GetSection("Jwt"));
+
+// Register token service implementation from Infrastructure
+builder.Services.AddSingleton<Booked.Shared.BuildingBlocks.Security.ITokenService, Booked.Identity.Infrastructure.Security.JwtTokenService>();
 builder.Services.AddControllers();
 
 var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];

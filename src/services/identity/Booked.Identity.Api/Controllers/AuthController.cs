@@ -1,4 +1,5 @@
 using Booked.Shared.Contracts.Auth;
+using Booked.Shared.BuildingBlocks.Security;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
@@ -31,12 +32,15 @@ public class AuthController : ControllerBase
     private static readonly PasswordHasher<StoredOrganization> OrganizationPasswordHasher = new();
 
     private readonly string _adminPassword;
+    private readonly ITokenService _tokenService;
 
-    public AuthController(IOptions<AuthSettings> authOptions)
+    public AuthController(IOptions<AuthSettings> authOptions, ITokenService tokenService)
     {
         _adminPassword = string.IsNullOrWhiteSpace(authOptions.Value.AdminPassword)
             ? "admin123"
             : authOptions.Value.AdminPassword;
+
+        _tokenService = tokenService;
     }
 
     [HttpGet("health")]
@@ -99,7 +103,7 @@ public class AuthController : ControllerBase
             return Unauthorized(new AuthResponse { Success = false, Message = "Invalid credentials" });
         }
 
-        var token = GenerateToken(user.Key);
+        var token = _tokenService.GenerateAccessToken(user.Key);
         return Ok(new AuthResponse
         {
             Success = true,
@@ -187,7 +191,7 @@ public class AuthController : ControllerBase
             return Unauthorized(new AuthResponse { Success = false, Message = "Invalid credentials" });
         }
 
-        var token = GenerateToken(org.Key);
+        var token = _tokenService.GenerateAccessToken(org.Key);
         return Ok(new AuthResponse
         {
             Success = true,
@@ -212,7 +216,7 @@ public class AuthController : ControllerBase
         }
 
         var adminId = "admin-" + req.AdminKey.Trim();
-        var token = GenerateToken(adminId);
+        var token = _tokenService.GenerateAccessToken(adminId);
 
         return Ok(new AuthResponse
         {
@@ -228,13 +232,5 @@ public class AuthController : ControllerBase
         return email.Trim().ToLowerInvariant();
     }
 
-    private static AuthToken GenerateToken(string userId)
-    {
-        return new AuthToken
-        {
-            AccessToken = $"token_{userId}_{Guid.NewGuid()}",
-            RefreshToken = $"refresh_{userId}_{Guid.NewGuid()}",
-            ExpiresAt = DateTime.UtcNow.AddHours(1)
-        };
-    }
+    
 }
