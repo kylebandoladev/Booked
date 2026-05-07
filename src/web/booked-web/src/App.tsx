@@ -8,6 +8,7 @@ import {
   organizationRegister,
 } from './lib/authApi'
 import { API_BASE_URL } from './lib/api'
+import { clearSession, getStoredSession, saveSessionFromAuthResponse } from './lib/authSession'
 import type { AuthResponse } from './types/auth'
 
 type Portal = 'customer' | 'organization'
@@ -23,6 +24,7 @@ function App() {
   const [success, setSuccess] = useState('')
   const [response, setResponse] = useState<AuthResponse | null>(null)
   const [health, setHealth] = useState('')
+  const [storedSession, setStoredSession] = useState(() => getStoredSession())
 
   const [customerRegisterForm, setCustomerRegisterForm] = useState({
     email: '',
@@ -48,6 +50,8 @@ function App() {
 
     try {
       const data = await handler()
+      saveSessionFromAuthResponse(data)
+      setStoredSession(getStoredSession())
       setResponse(data)
       setSuccess(data.message)
     } catch (submissionError) {
@@ -70,6 +74,13 @@ function App() {
     }
   }
 
+  function handleClearSession() {
+    clearSession()
+    setStoredSession(null)
+    setSuccess('Local session cleared')
+    setError('')
+  }
+
   return (
     <main className="min-h-screen bg-slate-950 text-slate-100">
       <section className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-6 py-10">
@@ -84,8 +95,18 @@ function App() {
             >
               Check Health
             </button>
+            <button
+              className="rounded-lg border border-slate-700 px-3 py-2 text-sm font-semibold text-slate-200 hover:bg-slate-800"
+              type="button"
+              onClick={handleClearSession}
+            >
+              Clear Session
+            </button>
             <p className="text-sm text-slate-300">{health}</p>
           </div>
+          <p className="mt-2 text-xs text-slate-400">
+            Stored Session: {storedSession?.token?.accessToken ? 'Present' : 'None'}
+          </p>
         </div>
 
         {isAdminRoute ? (

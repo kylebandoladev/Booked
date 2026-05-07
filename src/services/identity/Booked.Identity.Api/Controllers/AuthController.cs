@@ -54,6 +54,11 @@ public class AuthController : ControllerBase
     {
         var normalizedEmail = NormalizeEmail(req.Email);
         var normalizedName = req.FullName.Trim();
+        if (!ModelState.IsValid)
+        {
+            var errors = ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage).ToArray();
+            return BadRequest(new AuthResponse { Success = false, Message = string.Join("; ", errors) });
+        }
 
         if (Users.Values.Any(u => u.Email == normalizedEmail))
         {
@@ -125,6 +130,11 @@ public class AuthController : ControllerBase
         var normalizedEmail = NormalizeEmail(req.Email);
         var normalizedOrgName = req.OrganizationName.Trim();
         var subscriptionType = req.SubscriptionType.Trim().ToLowerInvariant();
+        if (!ModelState.IsValid)
+        {
+            var errors = ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage).ToArray();
+            return BadRequest(new AuthResponse { Success = false, Message = string.Join("; ", errors) });
+        }
 
         if (subscriptionType is not ("monthly" or "quarterly" or "yearly"))
         {
