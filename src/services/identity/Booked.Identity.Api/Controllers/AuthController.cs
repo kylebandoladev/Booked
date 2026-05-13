@@ -28,6 +28,8 @@ public class AuthController : ControllerBase
 
     private static readonly ConcurrentDictionary<string, StoredCustomer> Users = new();
     private static readonly ConcurrentDictionary<string, StoredOrganization> Organizations = new();
+    private static readonly ConcurrentDictionary<string, string> RefreshTokensBySubject = new();
+    private static readonly ConcurrentDictionary<string, string> RefreshSubjectsByToken = new();
     private static readonly PasswordHasher<StoredCustomer> CustomerPasswordHasher = new();
     private static readonly PasswordHasher<StoredOrganization> OrganizationPasswordHasher = new();
 
@@ -52,13 +54,14 @@ public class AuthController : ControllerBase
     [HttpPost("customer/register")]
     public ActionResult<AuthResponse> CustomerRegister([FromBody] CustomerRegisterRequest req)
     {
-        var normalizedEmail = NormalizeEmail(req.Email);
-        var normalizedName = req.FullName.Trim();
         if (!ModelState.IsValid)
         {
             var errors = ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage).ToArray();
             return BadRequest(new AuthResponse { Success = false, Message = string.Join("; ", errors) });
         }
+
+        var normalizedEmail = NormalizeEmail(req.Email);
+        var normalizedName = req.FullName.Trim();
 
         if (Users.Values.Any(u => u.Email == normalizedEmail))
         {
@@ -109,6 +112,7 @@ public class AuthController : ControllerBase
         }
 
         var token = _tokenService.GenerateAccessToken(user.Key);
+        StoreRefreshToken(user.Key, token.RefreshToken);
         return Ok(new AuthResponse
         {
             Success = true,
@@ -127,14 +131,15 @@ public class AuthController : ControllerBase
     [HttpPost("organization/register")]
     public ActionResult<AuthResponse> OrganizationRegister([FromBody] OrganizationRegisterRequest req)
     {
-        var normalizedEmail = NormalizeEmail(req.Email);
-        var normalizedOrgName = req.OrganizationName.Trim();
-        var subscriptionType = req.SubscriptionType.Trim().ToLowerInvariant();
         if (!ModelState.IsValid)
         {
             var errors = ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage).ToArray();
             return BadRequest(new AuthResponse { Success = false, Message = string.Join("; ", errors) });
         }
+
+        var normalizedEmail = NormalizeEmail(req.Email);
+        var normalizedOrgName = req.OrganizationName.Trim();
+        var subscriptionType = req.SubscriptionType.Trim().ToLowerInvariant();
 
         if (subscriptionType is not ("monthly" or "quarterly" or "yearly"))
         {
@@ -202,6 +207,7 @@ public class AuthController : ControllerBase
         }
 
         var token = _tokenService.GenerateAccessToken(org.Key);
+        StoreRefreshToken(org.Key, token.RefreshToken);
         return Ok(new AuthResponse
         {
             Success = true,
@@ -227,6 +233,7 @@ public class AuthController : ControllerBase
 
         var adminId = "admin-" + req.AdminKey.Trim();
         var token = _tokenService.GenerateAccessToken(adminId);
+        StoreRefreshToken(adminId, token.RefreshToken);
 
         return Ok(new AuthResponse
         {
@@ -237,9 +244,88 @@ public class AuthController : ControllerBase
         });
     }
 
+    [HttpPost("refresh")]
+    public ActionResult<AuthResponse> Refresh([FromBody] RefreshTokenRequest req)
+    {
+        if (!ModelState.IsValid)
+        {
+            var errors = ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage).ToArray();
+            return BadRequest(new AuthResponse { Success = false, Message = string.Join("; ", errors) });
+        }
+
+        if (!RefreshSubjectsByToken.TryGetValue(req.RefreshToken, out var subject))
+        {
+            return Unauthorized(new AuthResponse { Success = false, Message = "Invalid refresh token" });
+        }
+
+        if (!RefreshTokensBySubject.TryGetValue(subject, out var currentRefreshToken) || currentRefreshToken != req.RefreshToken)
+        {
+            return Unauthorized(new AuthResponse { Success = false, Message = "Refresh token has been rotated" });
+        }
+
+        var token = _tokenService.GenerateAccessToken(subject);
+        StoreRefreshToken(subject, token.RefreshToken);
+
+        return Ok(new AuthResponse
+        {
+            Success = true,
+            Message = "Token refreshed successfully",
+            Token = token,
+            User = BuildUserInfo(subject)
+        });
+    }
+
     private static string NormalizeEmail(string email)
     {
         return email.Trim().ToLowerInvariant();
+    }
+
+    private static void StoreRefreshToken(string subject, string refreshToken)
+    {
+        RefreshTokensBySubject.AddOrUpdate(subject, refreshToken, (_, _) => refreshToken);
+        RefreshSubjectsByToken.AddOrUpdate(refreshToken, subject, (_, _) => subject);
+    }
+
+    private static UserInfo BuildUserInfo(string subject)
+    {
+        if (Users.FirstOrDefault(u => u.Key == subject) is { } customer && !string.IsNullOrWhiteSpace(customer.Key))
+        {
+            return new UserInfo
+            {
+                Id = customer.Key,
+                Email = customer.Value.Email,
+                Role = "Customer",
+                Name = customer.Value.FullName
+            };
+        }
+
+        if (Organizations.FirstOrDefault(o => o.Key == subject) is { } org && !string.IsNullOrWhiteSpace(org.Key))
+        {
+            return new UserInfo
+            {
+                Id = org.Key,
+                Email = org.Value.Email,
+                Role = "Organization",
+                OrganizationName = org.Value.OrganizationName
+            };
+        }
+
+        if (subject.StartsWith("admin-", StringComparison.OrdinalIgnoreCase))
+        {
+            return new UserInfo
+            {
+                Id = subject,
+                Email = "admin@booked.app",
+                Role = "Admin"
+            };
+        }
+
+        return new UserInfo
+        {
+            Id = subject,
+            Email = string.Empty,
+            Role = "Unknown"
+        };
     }
 
     

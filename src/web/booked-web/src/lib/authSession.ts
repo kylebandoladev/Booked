@@ -53,3 +53,7 @@ export function clearSession(): void {
 export function getAccessToken(): string | null {
   return getStoredSession()?.token?.accessToken ?? null
 }
+
+export function getRefreshToken(): string | null {
+  return getStoredSession()?.token?.refreshToken ?? null
+}

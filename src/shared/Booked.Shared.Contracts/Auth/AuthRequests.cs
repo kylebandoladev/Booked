@@ -55,3 +55,9 @@ public class AdminLoginRequest
     [Required]
     public required string Password { get; set; }
 }
+
+public class RefreshTokenRequest
+{
+    [Required]
+    public required string RefreshToken { get; set; }
+}

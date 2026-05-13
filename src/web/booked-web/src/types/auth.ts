@@ -47,6 +47,10 @@ export interface AdminLoginRequest {
   password: string
 }
 
+export interface RefreshTokenRequest {
+  refreshToken: string
+}
+
 export interface HealthResponse {
   status: string
   service: string

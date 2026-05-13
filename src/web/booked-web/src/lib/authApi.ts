@@ -7,6 +7,7 @@ import type {
   HealthResponse,
   OrganizationLoginRequest,
   OrganizationRegisterRequest,
+  RefreshTokenRequest,
 } from '../types/auth'
 
 export function getHealth() {
@@ -31,4 +32,8 @@ export function organizationLogin(body: OrganizationLoginRequest) {
 
 export function adminLogin(body: AdminLoginRequest) {
   return postJson<AdminLoginRequest, AuthResponse>('/api/auth/admin/login', body)
+}
+
+export function refreshToken(body: RefreshTokenRequest) {
+  return postJson<RefreshTokenRequest, AuthResponse>('/api/auth/refresh', body)
 }

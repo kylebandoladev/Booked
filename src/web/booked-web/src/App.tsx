@@ -6,13 +6,18 @@ import {
   getHealth,
   organizationLogin,
   organizationRegister,
+  refreshToken,
 } from './lib/authApi'
 import { API_BASE_URL } from './lib/api'
-import { clearSession, getStoredSession, saveSessionFromAuthResponse } from './lib/authSession'
+import { clearSession, getRefreshToken, getStoredSession, saveSessionFromAuthResponse } from './lib/authSession'
 import type { AuthResponse } from './types/auth'
 
 type Portal = 'customer' | 'organization'
 type Mode = 'register' | 'login'
+
+function createFreshEmail(prefix: string) {
+  return `${prefix}+${Date.now()}@booked.test`
+}
 
 function App() {
   const isAdminRoute = useMemo(() => window.location.pathname.toLowerCase() === '/admin-login', [])
@@ -27,14 +32,14 @@ function App() {
   const [storedSession, setStoredSession] = useState(() => getStoredSession())
 
   const [customerRegisterForm, setCustomerRegisterForm] = useState({
-    email: '',
+    email: createFreshEmail('customer'),
     password: '',
     fullName: '',
   })
   const [customerLoginForm, setCustomerLoginForm] = useState({ email: '', password: '' })
 
   const [organizationRegisterForm, setOrganizationRegisterForm] = useState({
-    email: '',
+    email: createFreshEmail('organization'),
     password: '',
     organizationName: '',
     subscriptionType: 'monthly' as 'monthly' | 'quarterly' | 'yearly',
@@ -54,6 +59,15 @@ function App() {
       setStoredSession(getStoredSession())
       setResponse(data)
       setSuccess(data.message)
+
+      setCustomerRegisterForm((prev) => ({
+        ...prev,
+        email: createFreshEmail('customer'),
+      }))
+      setOrganizationRegisterForm((prev) => ({
+        ...prev,
+        email: createFreshEmail('organization'),
+      }))
     } catch (submissionError) {
       const message = submissionError instanceof Error ? submissionError.message : 'Request failed'
       setError(message)
@@ -72,6 +86,17 @@ function App() {
       const message = healthError instanceof Error ? healthError.message : 'Health check failed'
       setHealth(`Failed: ${message}`)
     }
+  }
+
+  async function handleRefreshSession() {
+    const refresh = getRefreshToken()
+    if (!refresh) {
+      setError('No refresh token available. Log in first.')
+      setSuccess('')
+      return
+    }
+
+    await withSubmit(() => refreshToken({ refreshToken: refresh }))
   }
 
   function handleClearSession() {
@@ -101,6 +126,13 @@ function App() {
               onClick={handleClearSession}
             >
               Clear Session
+            </button>
+            <button
+              className="rounded-lg border border-slate-700 px-3 py-2 text-sm font-semibold text-slate-200 hover:bg-slate-800"
+              type="button"
+              onClick={handleRefreshSession}
+            >
+              Refresh Session
             </button>
             <p className="text-sm text-slate-300">{health}</p>
           </div>
