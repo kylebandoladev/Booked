@@ -1,5 +1,6 @@
 using Booked.Shared.Contracts.Auth;
 using Booked.Shared.BuildingBlocks.Security;
+using Booked.Identity.Application;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
@@ -28,21 +29,21 @@ public class AuthController : ControllerBase
 
     private static readonly ConcurrentDictionary<string, StoredCustomer> Users = new();
     private static readonly ConcurrentDictionary<string, StoredOrganization> Organizations = new();
-    private static readonly ConcurrentDictionary<string, string> RefreshTokensBySubject = new();
-    private static readonly ConcurrentDictionary<string, string> RefreshSubjectsByToken = new();
     private static readonly PasswordHasher<StoredCustomer> CustomerPasswordHasher = new();
     private static readonly PasswordHasher<StoredOrganization> OrganizationPasswordHasher = new();
 
     private readonly string _adminPassword;
     private readonly ITokenService _tokenService;
+    private readonly IRefreshTokenService _refreshTokenService;
 
-    public AuthController(IOptions<AuthSettings> authOptions, ITokenService tokenService)
+    public AuthController(IOptions<AuthSettings> authOptions, ITokenService tokenService, IRefreshTokenService refreshTokenService)
     {
         _adminPassword = string.IsNullOrWhiteSpace(authOptions.Value.AdminPassword)
             ? "admin123"
             : authOptions.Value.AdminPassword;
 
         _tokenService = tokenService;
+        _refreshTokenService = refreshTokenService;
     }
 
     [HttpGet("health")]
@@ -95,7 +96,7 @@ public class AuthController : ControllerBase
     }
 
     [HttpPost("customer/login")]
-    public ActionResult<AuthResponse> CustomerLogin([FromBody] CustomerLoginRequest req)
+    public async Task<ActionResult<AuthResponse>> CustomerLogin([FromBody] CustomerLoginRequest req)
     {
         var normalizedEmail = NormalizeEmail(req.Email);
 
@@ -112,7 +113,8 @@ public class AuthController : ControllerBase
         }
 
         var token = _tokenService.GenerateAccessToken(user.Key);
-        StoreRefreshToken(user.Key, token.RefreshToken);
+        await _refreshTokenService.CreateAsync(user.Key, token.RefreshToken, token.ExpiresAt, GetClientIpAddress(), GetUserAgent());
+        
         return Ok(new AuthResponse
         {
             Success = true,
@@ -190,7 +192,7 @@ public class AuthController : ControllerBase
     }
 
     [HttpPost("organization/login")]
-    public ActionResult<AuthResponse> OrganizationLogin([FromBody] OrganizationLoginRequest req)
+    public async Task<ActionResult<AuthResponse>> OrganizationLogin([FromBody] OrganizationLoginRequest req)
     {
         var normalizedEmail = NormalizeEmail(req.Email);
 
@@ -207,7 +209,8 @@ public class AuthController : ControllerBase
         }
 
         var token = _tokenService.GenerateAccessToken(org.Key);
-        StoreRefreshToken(org.Key, token.RefreshToken);
+        await _refreshTokenService.CreateAsync(org.Key, token.RefreshToken, token.ExpiresAt, GetClientIpAddress(), GetUserAgent());
+        
         return Ok(new AuthResponse
         {
             Success = true,
@@ -224,7 +227,7 @@ public class AuthController : ControllerBase
     }
 
     [HttpPost("admin/login")]
-    public ActionResult<AuthResponse> AdminLogin([FromBody] AdminLoginRequest req)
+    public async Task<ActionResult<AuthResponse>> AdminLogin([FromBody] AdminLoginRequest req)
     {
         if (req.Password != _adminPassword)
         {
@@ -233,7 +236,7 @@ public class AuthController : ControllerBase
 
         var adminId = "admin-" + req.AdminKey.Trim();
         var token = _tokenService.GenerateAccessToken(adminId);
-        StoreRefreshToken(adminId, token.RefreshToken);
+        await _refreshTokenService.CreateAsync(adminId, token.RefreshToken, token.ExpiresAt, GetClientIpAddress(), GetUserAgent());
 
         return Ok(new AuthResponse
         {
@@ -245,7 +248,7 @@ public class AuthController : ControllerBase
     }
 
     [HttpPost("refresh")]
-    public ActionResult<AuthResponse> Refresh([FromBody] RefreshTokenRequest req)
+    public async Task<ActionResult<AuthResponse>> Refresh([FromBody] RefreshTokenRequest req)
     {
         if (!ModelState.IsValid)
         {
@@ -253,26 +256,55 @@ public class AuthController : ControllerBase
             return BadRequest(new AuthResponse { Success = false, Message = string.Join("; ", errors) });
         }
 
-        if (!RefreshSubjectsByToken.TryGetValue(req.RefreshToken, out var subject))
+        var refreshToken = await _refreshTokenService.GetAsync(req.RefreshToken);
+        if (refreshToken == null || refreshToken.IsRevoked || refreshToken.ExpiresAt < DateTime.UtcNow)
         {
-            return Unauthorized(new AuthResponse { Success = false, Message = "Invalid refresh token" });
+            return Unauthorized(new AuthResponse { Success = false, Message = "Invalid or expired refresh token" });
         }
 
-        if (!RefreshTokensBySubject.TryGetValue(subject, out var currentRefreshToken) || currentRefreshToken != req.RefreshToken)
-        {
-            return Unauthorized(new AuthResponse { Success = false, Message = "Refresh token has been rotated" });
-        }
-
-        var token = _tokenService.GenerateAccessToken(subject);
-        StoreRefreshToken(subject, token.RefreshToken);
+        var token = _tokenService.GenerateAccessToken(refreshToken.Subject);
+        await _refreshTokenService.RevokeAsync(req.RefreshToken);
+        await _refreshTokenService.CreateAsync(refreshToken.Subject, token.RefreshToken, token.ExpiresAt, GetClientIpAddress(), GetUserAgent());
 
         return Ok(new AuthResponse
         {
             Success = true,
             Message = "Token refreshed successfully",
             Token = token,
-            User = BuildUserInfo(subject)
+            User = BuildUserInfo(refreshToken.Subject)
         });
+    }
+
+    [HttpPost("logout")]
+    public async Task<ActionResult<AuthResponse>> Logout([FromBody] LogoutRequest req)
+    {
+        if (!ModelState.IsValid)
+        {
+            var errors = ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage).ToArray();
+            return BadRequest(new AuthResponse { Success = false, Message = string.Join("; ", errors) });
+        }
+
+        var refreshToken = await _refreshTokenService.GetAsync(req.RefreshToken);
+        if (refreshToken == null)
+        {
+            return Unauthorized(new AuthResponse { Success = false, Message = "Invalid refresh token" });
+        }
+
+        await _refreshTokenService.RevokeAsync(req.RefreshToken);
+        return Ok(new AuthResponse { Success = true, Message = "Logged out successfully" });
+    }
+
+    [HttpPost("revoke")]
+    public async Task<ActionResult<AuthResponse>> RevokeAllTokens([FromBody] LogoutRequest req)
+    {
+        var refreshToken = await _refreshTokenService.GetAsync(req.RefreshToken);
+        if (refreshToken == null)
+        {
+            return Unauthorized(new AuthResponse { Success = false, Message = "Invalid refresh token" });
+        }
+
+        await _refreshTokenService.RevokeBySubjectAsync(refreshToken.Subject);
+        return Ok(new AuthResponse { Success = true, Message = "All tokens revoked successfully" });
     }
 
     private static string NormalizeEmail(string email)
@@ -280,10 +312,19 @@ public class AuthController : ControllerBase
         return email.Trim().ToLowerInvariant();
     }
 
-    private static void StoreRefreshToken(string subject, string refreshToken)
+    private string GetClientIpAddress()
     {
-        RefreshTokensBySubject.AddOrUpdate(subject, refreshToken, (_, _) => refreshToken);
-        RefreshSubjectsByToken.AddOrUpdate(refreshToken, subject, (_, _) => subject);
+        if (HttpContext.Request.Headers.TryGetValue("X-Forwarded-For", out var forwarded))
+        {
+            return forwarded.ToString().Split(',').FirstOrDefault()?.Trim() ?? "unknown";
+        }
+
+        return HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+    }
+
+    private string GetUserAgent()
+    {
+        return HttpContext.Request.Headers.UserAgent.ToString() ?? "unknown";
     }
 
     private static UserInfo BuildUserInfo(string subject)

@@ -7,6 +7,8 @@ builder.Services.Configure<Booked.Shared.Contracts.Security.JwtSettings>(builder
 
 // Register token service implementation from Infrastructure
 builder.Services.AddSingleton<Booked.Shared.BuildingBlocks.Security.ITokenService, Booked.Identity.Infrastructure.Security.JwtTokenService>();
+builder.Services.AddSingleton<Booked.Identity.Application.IRefreshTokenService, Booked.Identity.Infrastructure.Services.InMemoryRefreshTokenService>();
+
 builder.Services.AddControllers();
 
 var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
