@@ -1,0 +1,107 @@
+name: Security & Quality Gates
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '10.0.x'
+    
+    - name: Restore dependencies
+      run: dotnet restore
+    
+    - name: Build
+      run: dotnet build --no-restore --configuration Release
+    
+    - name: Run Unit Tests
+      run: dotnet test tests/unit/Booked.Identity.Tests/Booked.Identity.Tests.csproj --no-build --verbosity normal --logger "trx;LogFileName=unit-test-results.trx"
+    
+    - name: Run Integration Tests
+      run: dotnet test tests/integration/Booked.Identity.Integration.Tests/Booked.Identity.Integration.Tests.csproj --no-build --verbosity normal --logger "trx;LogFileName=integration-test-results.trx"
+    
+    - name: Upload test results
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: test-results
+        path: '**/test-results.trx'
+    
+    - name: Check for vulnerable packages
+      run: |
+        dotnet list package --vulnerable > vulnerability-report.txt
+        EXIT_CODE=$?
+        cat vulnerability-report.txt
+        if [ $EXIT_CODE -ne 0 ]; then
+          echo "FAILED: Vulnerable packages detected"
+          exit 1
+        fi
+    
+    - name: Upload vulnerability report
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: vulnerability-report
+        path: vulnerability-report.txt
+
+  security-scan:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '10.0.x'
+    
+    - name: Run Trivy security scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: 'fs'
+        scan-ref: '.'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+        severity: 'HIGH,CRITICAL'
+    
+    - name: Upload Trivy results to GitHub Security
+      uses: github/codeql-action/upload-sarif@v2
+      with:
+        sarif_file: 'trivy-results.sarif'
+        category: 'trivy'
+    
+    - name: Check secret exposure
+      uses: gitleaks/gitleaks-action@v2
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  code-quality:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '10.0.x'
+    
+    - name: Restore dependencies
+      run: dotnet restore
+    
+    - name: Run SonarCloud scan (if token available)
+      if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+      uses: SonarSource/sonarcloud-github-action@master
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
